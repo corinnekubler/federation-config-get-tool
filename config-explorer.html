@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css">
+    <title>Config Explorer</title>
+</head>
+
+<body>
+    <div id="swagger-ui"></div>
+
+    <script src="data.js"></script>
+
+    <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+
+    <script>
+       
+            // Use the variable defined in data.js
+            const rawSpec = swaggerData;
+
+            
+
+window.onload = () => {
+    // 1. Create a deep copy to work on
+    const spec = JSON.parse(JSON.stringify(rawSpec));
+    const filteredPaths = {};
+    const activeTags = new Set();
+
+    // 2. Simple Helper to find data by path (e.g., #/components/schemas/Name)
+    const lookup = (ref) => {
+        const parts = ref.replace('#/', '').split('/');
+        let current = rawSpec;
+        for (const part of parts) {
+            if (!current[part]) return null;
+            current = current[part];
+        }
+        return current;
+    };
+
+    // 3. Recursive function to replace $ref with actual objects
+    const dereference = (obj) => {
+        if (!obj || typeof obj !== 'object') return obj;
+        
+        if (obj['$ref']) {
+            return dereference(lookup(obj['$ref']));
+        }
+
+        for (const key in obj) {
+            obj[key] = dereference(obj[key]);
+        }
+        return obj;
+    };
+
+    // 4. Filter and Dereference simultaneously
+    Object.entries(spec.paths).forEach(([path, methods]) => {
+        if (path.toLowerCase().includes('/config') && methods.get) {
+            // We DEREFERENCE the method before adding it.
+            // This pulls all schema data into the path itself.
+            filteredPaths[path] = { 
+                get: dereference(JSON.parse(JSON.stringify(methods.get))) 
+            };
+            
+            if (methods.get.tags) {
+                methods.get.tags.forEach(tag => activeTags.add(tag));
+            }
+        }
+    });
+
+    spec.paths = filteredPaths;
+
+    // 5. Prune the Tags
+    if (spec.tags) {
+        spec.tags = spec.tags.filter(tagObj => activeTags.has(tagObj.name));
+    }
+
+    // 6. Final Render
+    window.ui = SwaggerUIBundle({
+        spec: spec,
+        dom_id: '#swagger-ui',
+        deepLinking: true,
+        presets: [SwaggerUIBundle.presets.apis],
+        defaultModelsExpandDepth: -1, // Hides the bottom Schemas section
+        defaultModelExpandDepth: 0,   // Hides models inside endpoints
+        supportedSubmitMethods: ['get']
+    });
+};
+    </script>
+</body>
+
+</html>
